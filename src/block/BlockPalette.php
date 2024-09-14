@@ -45,11 +45,11 @@ final class BlockPalette {
 	private array $fallbackStateId;
 
 	public function __construct() {
-		foreach(method_exists(TypeConverter::class, "getAll") ? TypeConverter::getAll(true) : [ProtocolInfo::CURRENT_PROTOCOL => TypeConverter::getInstance()] as $protocolId => $typeConverter){
+		foreach(defined("ProtocolInfo::ACCEPTED_PROTOCOL") ? ProtocolInfo::ACCEPTED_PROTOCOL : [ProtocolInfo::CURRENT_PROTOCOL] as $protocolId){
 			if(isset($this->states[$protocolId])){
 				continue;
 			}
-			$this->translator[$protocolId] = $blockTranslator = $typeConverter->getBlockTranslator();
+			$this->translator[$protocolId] = $blockTranslator = TypeConverter::getInstance($protocolId)->getBlockTranslator();
 			$dictionary = $blockTranslator->getBlockStateDictionary();
 			$this->states[$protocolId] = $dictionary->getStates();
 			$this->bedrockKnownStates[$protocolId] = new ReflectionProperty($dictionary, "states");
