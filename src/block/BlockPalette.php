@@ -18,7 +18,6 @@ use function array_keys;
 use function array_merge;
 use function count;
 use function hash;
-use function method_exists;
 use function property_exists;
 use function strcmp;
 use function usort;
@@ -45,7 +44,7 @@ final class BlockPalette {
 	private array $fallbackStateId;
 
 	public function __construct() {
-		foreach(defined("ProtocolInfo::ACCEPTED_PROTOCOL") ? ProtocolInfo::ACCEPTED_PROTOCOL : [ProtocolInfo::CURRENT_PROTOCOL] as $protocolId){
+		foreach(defined(ProtocolInfo::class . "::ACCEPTED_PROTOCOL") ? ProtocolInfo::ACCEPTED_PROTOCOL : [ProtocolInfo::CURRENT_PROTOCOL] as $protocolId){
 			if(isset($this->states[$protocolId])){
 				continue;
 			}
