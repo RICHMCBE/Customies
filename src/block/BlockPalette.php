@@ -120,6 +120,26 @@ final class BlockPalette {
 					$stateId++;
 				}
 			}
+
+			if(count($this->states) > 1){
+				// To work around the BedrockBlockUpgradeSchema in 1.21.30.24_beta_to_1.21.40.25_beta not being able to automatically map all skull ids,
+				// we manually set the unmapped skulls to "minecraft:skeleton_skull", which would later be changed by downgraders to "minecraft:skull".
+				// Reference: https://github.com/NetherGamesMC/PocketMine-MP/blob/1f23bc1e1ffb2300b60fe21f2f7a8bcca5cc6b05/src/network/mcpe/convert/BlockStateDictionary.php#L81-L93
+				$standardSkull = $stateDataToStateIdLookup[BlockTypeNames::SKELETON_SKULL];
+				foreach([
+							BlockTypeNames::WITHER_SKELETON_SKULL,
+							BlockTypeNames::ZOMBIE_HEAD,
+							BlockTypeNames::PLAYER_HEAD,
+							BlockTypeNames::CREEPER_HEAD,
+							BlockTypeNames::DRAGON_HEAD,
+							BlockTypeNames::PIGLIN_HEAD
+						] as $skull){
+					if(!isset($stateDataToStateIdLookup[$skull])){
+						$stateDataToStateIdLookup[$skull] = $standardSkull;
+					}
+				}
+			}
+
 			$this->states[$protocol] = $sortedStates;
 			$dictionary = $this->translator[$protocol]->getBlockStateDictionary();
 			$this->bedrockKnownStates[$protocol]->setValue($dictionary, $sortedStates);
