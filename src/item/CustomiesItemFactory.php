@@ -8,7 +8,6 @@ use pocketmine\block\Block;
 use pocketmine\data\bedrock\item\BlockItemIdMap;
 use pocketmine\data\bedrock\item\SavedItemData;
 use pocketmine\inventory\CreativeCategory;
-use pocketmine\inventory\CreativeInventory;
 use pocketmine\item\Item;
 use pocketmine\item\ItemIdentifier;
 use pocketmine\item\ItemTypeIds;
@@ -74,12 +73,7 @@ final class CustomiesItemFactory {
 
 		$this->itemTableEntries[$identifier] = $entry = new ItemTypeEntry($identifier, $itemId, $componentBased, $componentBased ? 1 : 0, new CacheableNbt($nbt));
 		$this->registerCustomItemMapping($identifier, $itemId, $entry);
-		if($category !== null){
-			CreativeInventory::getInstance()->add(
-				$item,
-				$category
-			);
-		}
+		CreativeItemManager::getInstance()->addItem($item, $category);
 	}
 
 	/**
