@@ -14,5 +14,5 @@ contributors:
   - Unickorn
   - abimek
 
-depend:
+softdepend:
   - ItemTexture
