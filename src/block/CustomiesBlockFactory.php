@@ -171,9 +171,8 @@ final class CustomiesBlockFactory {
 		$creativeInfo ??= CreativeInventoryInfo::DEFAULT();
 		$components->setTag("minecraft:creative_category", CompoundTag::create()
 			->setString("category", $creativeInfo->getCategory())
-			->setString("group", $creativeInfo->getGroup()));
-		foreach($propertiesProtocol as $protocolId){
-			$propertiesTags[$protocolId]
+			->setString("group", $creativeInfo->getGroup()));{
+			$propertiesTag
 				->setTag("components", $components)
 				->setTag("menu_category", CompoundTag::create()
 					->setString("category", $creativeInfo->getCategory() ?? "")
