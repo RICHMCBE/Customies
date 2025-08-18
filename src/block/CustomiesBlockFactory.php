@@ -18,7 +18,9 @@ use pocketmine\data\bedrock\block\BlockStateData;
 use pocketmine\data\bedrock\block\convert\BlockStateReader;
 use pocketmine\data\bedrock\block\convert\BlockStateWriter;
 use pocketmine\inventory\CreativeCategory;
+use pocketmine\inventory\CreativeGroup;
 use pocketmine\inventory\CreativeInventory;
+use pocketmine\lang\Translatable;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\ListTag;
 use pocketmine\network\mcpe\protocol\types\BlockPaletteEntry;
@@ -45,6 +47,7 @@ final class CustomiesBlockFactory {
 	private array $blockPaletteEntries = [];
 	/** @var array<string, Block> */
 	private array $customBlocks = [];
+	private array $groups = [];
 
 	/**
 	 * Adds a worker initialize hook to the async pool to sync the BlockFactory for every thread worker that is created.
@@ -67,6 +70,18 @@ final class CustomiesBlockFactory {
 			$this->customBlocks[$identifier] ??
 			throw new InvalidArgumentException("Custom block $identifier is not registered")
 		);
+	}
+
+	private function loadGroups() : void {
+		if($this->groups !== []){
+			return;
+		}
+		foreach(CreativeInventory::getInstance()->getAllEntries() as $entry){
+			$group = $entry->getGroup();
+			if($group !== null){
+				$this->groups[$group->getName()->getText()] = $group;
+			}
+		}
 	}
 
 	/**
@@ -154,12 +169,7 @@ final class CustomiesBlockFactory {
 		GlobalBlockStateHandlers::getSerializer()->map($block, $serializer);
 		GlobalBlockStateHandlers::getDeserializer()->map($identifier, $deserializer);
 
-		$addToCreative = $creativeInfo !== null;
-
 		$creativeInfo ??= CreativeInventoryInfo::DEFAULT();
-		$components->setTag("minecraft:creative_category", CompoundTag::create()
-			->setString("category", $creativeInfo->getCategory())
-			->setString("group", $creativeInfo->getGroup()));
 		$propertiesTag
 			->setTag("components",
 				$components->setTag("minecraft:creative_category", CompoundTag::create()
@@ -170,14 +180,30 @@ final class CustomiesBlockFactory {
 				->setString("group", $creativeInfo->getGroup() ?? ""))
 			->setInt("molangVersion", 1);
 
-		if($addToCreative){
-			CreativeInventory::getInstance()->add($block->asItem(), match($creativeInfo->getCategory()){
+		if($creativeInfo !== null){
+			$this->loadGroups();
+			if($creativeInfo->getCategory() === CreativeInventoryInfo::CATEGORY_ALL || $creativeInfo->getCategory() === CreativeInventoryInfo::CATEGORY_COMMANDS){
+				return;
+			}
+
+			$group = $this->groups[$creativeInfo->getGroup()] ?? ($creativeInfo->getGroup() !== "" && $creativeInfo->getGroup() !== CreativeInventoryInfo::NONE ? new CreativeGroup(
+				new Translatable($creativeInfo->getGroup()),
+				$block->asItem()
+			) : null);
+
+			if($group !== null){
+				$this->groups[$group->getName()->getText()] = $group;
+			}
+
+			$category = match ($creativeInfo->getCategory()) {
 				CreativeInventoryInfo::CATEGORY_CONSTRUCTION => CreativeCategory::CONSTRUCTION,
 				CreativeInventoryInfo::CATEGORY_ITEMS => CreativeCategory::ITEMS,
 				CreativeInventoryInfo::CATEGORY_NATURE => CreativeCategory::NATURE,
 				CreativeInventoryInfo::CATEGORY_EQUIPMENT => CreativeCategory::EQUIPMENT,
 				default => throw new AssumptionFailedError("Unknown category")
-			});
+			};
+
+			CreativeInventory::getInstance()->add($block->asItem(), $category, $group);
 		}
 
 		$this->blockPaletteEntries[] = new BlockPaletteEntry($identifier, new CacheableNbt($propertiesTag));
