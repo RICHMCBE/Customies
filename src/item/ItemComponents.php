@@ -4,6 +4,7 @@ declare(strict_types=1);
 namespace customiesdevs\customies\item;
 
 use customiesdevs\customies\item\component\ItemComponent;
+use pocketmine\nbt\tag\CompoundTag;
 
 interface ItemComponents {
 
@@ -24,7 +25,7 @@ interface ItemComponents {
 
 	/**
 	 * Returns the fully-structured CompoundTag that can be sent to a client in the ItemComponentsPacket.
-	 * @return ItemComponent[]
+	 * @return CompoundTag
 	 */
-	public function getComponents(): array;
+	public function getComponents(): CompoundTag;
 }
