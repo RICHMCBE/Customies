@@ -3,23 +3,28 @@ declare(strict_types=1);
 
 namespace customiesdevs\customies\item;
 
+use Closure;
+use customiesdevs\customies\util\NBT;
 use InvalidArgumentException;
 use pocketmine\block\Block;
 use pocketmine\data\bedrock\item\BlockItemIdMap;
 use pocketmine\data\bedrock\item\SavedItemData;
 use pocketmine\inventory\CreativeCategory;
+use pocketmine\inventory\CreativeGroup;
+use pocketmine\inventory\CreativeInventory;
 use pocketmine\item\Item;
-use pocketmine\item\ItemIdentifier;
-use pocketmine\item\ItemTypeIds;
 use pocketmine\item\StringToItemParser;
+use pocketmine\lang\Translatable;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\protocol\types\CacheableNbt;
 use pocketmine\network\mcpe\protocol\types\ItemTypeEntry;
+use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\SingletonTrait;
-use pocketmine\utils\Utils;
 use pocketmine\world\format\io\GlobalItemDataHandlers;
 use ReflectionClass;
+use RuntimeException;
+
 use function array_values;
 
 final class CustomiesItemFactory {
@@ -29,6 +34,7 @@ final class CustomiesItemFactory {
 	 * @var ItemTypeEntry[]
 	 */
 	private array $itemTableEntries = [];
+	private array $groups = [];
 
 	/**
 	 * Get a custom item from its identifier. An exception will be thrown if the item is not registered.
@@ -39,6 +45,18 @@ final class CustomiesItemFactory {
 			throw new InvalidArgumentException("Custom item " . $identifier . " is not registered");
 		}
 		return $item->setCount($amount);
+	}
+
+	private function loadGroups() : void {
+		if($this->groups !== []){
+			return;
+		}
+		foreach(CreativeInventory::getInstance()->getAllEntries() as $entry){
+			$group = $entry->getGroup();
+			if($group !== null){
+				$this->groups[$group->getName()->getText()] = $group;
+			}
+		}
 	}
 
 	/**
@@ -54,26 +72,82 @@ final class CustomiesItemFactory {
 	 * item components if present.
 	 * @phpstan-param class-string $className
 	 */
-	public function registerItem(string $className, string $identifier, string $name, ?int $id = null, ?CreativeCategory $category = null): void {
-		if($className !== Item::class) {
-			Utils::testValidInstance($className, Item::class);
+	public function registerItem(Closure $itemFunc, string $identifier, ?CreativeInventoryInfo $creativeInfo = null): void {
+		$item = $itemFunc();
+		if(!$item instanceof Item) {
+			throw new InvalidArgumentException("Class returned from closure is not a Item");
 		}
-
-		$itemId = $id ?? ItemTypeIds::newId();
-		$item = new $className(new ItemIdentifier($itemId), $name);
+		$itemId = $item->getTypeId();
 
 		GlobalItemDataHandlers::getDeserializer()->map($identifier, fn() => clone $item);
 		GlobalItemDataHandlers::getSerializer()->map($item, fn() => new SavedItemData($identifier));
 
 		StringToItemParser::getInstance()->register($identifier, fn() => clone $item);
 
-		$nbt = ($componentBased = $item instanceof ItemComponents) ? $item->getComponents()
-			->setInt("id", $itemId)
-			->setString("name", $identifier) : CompoundTag::create();
+		// This is where the components are added to the item
+		$componentBased = $item instanceof ItemComponents;
+		$nbt = $this->createItemNbt($item, $identifier, $itemId, $creativeInfo);
+
+		if($creativeInfo !== null){
+			$this->loadGroups();
+			if($creativeInfo->getCategory() === CreativeInventoryInfo::CATEGORY_ALL || $creativeInfo->getCategory() === CreativeInventoryInfo::CATEGORY_COMMANDS){
+				return;
+			}
+
+			$group = $this->groups[$creativeInfo->getGroup()] ?? ($creativeInfo->getGroup() !== "" && $creativeInfo->getGroup() !== CreativeInventoryInfo::NONE ? new CreativeGroup(
+				new Translatable($creativeInfo->getGroup()),
+				$item
+			) : null);
+
+			if($group !== null){
+				$this->groups[$group->getName()->getText()] = $group;
+			}
+
+			$category = match ($creativeInfo->getCategory()) {
+				CreativeInventoryInfo::CATEGORY_CONSTRUCTION => CreativeCategory::CONSTRUCTION,
+				CreativeInventoryInfo::CATEGORY_ITEMS => CreativeCategory::ITEMS,
+				CreativeInventoryInfo::CATEGORY_NATURE => CreativeCategory::NATURE,
+				CreativeInventoryInfo::CATEGORY_EQUIPMENT => CreativeCategory::EQUIPMENT,
+				default => throw new AssumptionFailedError("Unknown category")
+			};
+
+			CreativeInventory::getInstance()->add($item, $category, $group);
+		}
 
 		$this->itemTableEntries[$identifier] = $entry = new ItemTypeEntry($identifier, $itemId, $componentBased, $componentBased ? 1 : 0, new CacheableNbt($nbt));
 		$this->registerCustomItemMapping($identifier, $itemId, $entry);
-		CreativeItemManager::getInstance()->addItem($item, $category);
+	}
+
+	/**
+	 * Creates the NBT data for the item.
+	 */
+	private function createItemNbt(Item $item, string $identifier, int $itemId, ?CreativeInventoryInfo $creativeInfo): CompoundTag {
+		$components = CompoundTag::create();
+		$properties = CompoundTag::create();
+
+		if ($item instanceof ItemComponents) {
+			foreach ($item->getComponents() as $component) {
+				$tag = NBT::getTagType($component->getValue());
+				if ($tag === null) {
+					throw new RuntimeException("Failed to get tag type for component " . $component->getName());
+				}
+				if ($component->isProperty()) {
+					$properties->setTag($component->getName(), $tag);
+					continue;
+				}
+				$components->setTag($component->getName(), $tag);
+			}
+			if ($creativeInfo !== null) {
+				$properties->setTag("creative_category", NBT::getTagType($creativeInfo->getNumericCategory()));
+				$properties->setTag("creative_group", NBT::getTagType($creativeInfo->getGroup()));
+			}
+			$components->setTag("item_properties", $properties);
+			return CompoundTag::create()
+				->setTag("components", $components)
+				->setInt("id", $itemId)
+				->setString("name", $identifier);
+		}
+		return CompoundTag::create();
 	}
 
 	/**
