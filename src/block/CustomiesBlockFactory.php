@@ -8,6 +8,7 @@ use customiesdevs\customies\block\permutations\Permutable;
 use customiesdevs\customies\block\permutations\Permutation;
 use customiesdevs\customies\block\permutations\Permutations;
 use customiesdevs\customies\item\CreativeInventoryInfo;
+use customiesdevs\customies\item\CreativeItemManager;
 use customiesdevs\customies\item\CustomiesItemFactory;
 use customiesdevs\customies\task\AsyncRegisterBlocksTask;
 use customiesdevs\customies\util\NBT;
@@ -17,14 +18,11 @@ use pocketmine\block\RuntimeBlockStateRegistry;
 use pocketmine\data\bedrock\block\BlockStateData;
 use pocketmine\data\bedrock\block\convert\BlockStateReader;
 use pocketmine\data\bedrock\block\convert\BlockStateWriter;
-use pocketmine\inventory\CreativeCategory;
-use pocketmine\inventory\CreativeInventory;
 use pocketmine\nbt\tag\CompoundTag;
 use pocketmine\nbt\tag\ListTag;
 use pocketmine\network\mcpe\protocol\types\BlockPaletteEntry;
 use pocketmine\network\mcpe\protocol\types\CacheableNbt;
 use pocketmine\Server;
-use pocketmine\utils\AssumptionFailedError;
 use pocketmine\utils\SingletonTrait;
 use pocketmine\world\format\io\GlobalBlockStateHandlers;
 use function array_map;
@@ -84,7 +82,7 @@ final class CustomiesBlockFactory {
 	 * @phpstan-param null|(Closure(BlockStateWriter): Block) $serializer
 	 * @phpstan-param null|(Closure(Block): BlockStateReader) $deserializer
 	 */
-	public function registerBlock(Closure $blockFunc, string $identifier, ?Model $model = null, ?CreativeInventoryInfo $creativeInfo = null, ?Closure $serializer = null, ?Closure $deserializer = null): void {
+	public function registerBlock(Closure $blockFunc, string $identifier, ?Model $model = null, ?CreativeInventoryInfo $creativeInfo = null, ?Closure $serializer = null, ?Closure $deserializer = null, bool $sort = true): void {
 		$block = $blockFunc();
 		if(!$block instanceof Block) {
 			throw new InvalidArgumentException("Class returned from closure is not a Block");
@@ -111,6 +109,11 @@ final class CustomiesBlockFactory {
 			}
 		}
 
+		if($sort){
+			$insertStateToPalette = BlockPalette::getInstance()->insertState(...);
+		}else{
+			$insertStateToPalette = BlockPalette::getInstance()->insertStateWithoutSort(...);
+		}
 		if($block instanceof Permutable) {
 			$blockPropertyNames = $blockPropertyValues = $blockProperties = [];
 			foreach($block->getBlockProperties() as $blockProperty){
@@ -137,7 +140,7 @@ final class CustomiesBlockFactory {
 				$blockState = CompoundTag::create()
 					->setString(BlockStateData::TAG_NAME, $identifier)
 					->setTag(BlockStateData::TAG_STATES, $states);
-				BlockPalette::getInstance()->insertState($blockState, $meta);
+				$insertStateToPalette($blockState, $meta);
 			}
 
 			$serializer ??= static function (Permutable $block) use ($identifier, $blockPropertyNames) : BlockStateWriter {
@@ -156,7 +159,7 @@ final class CustomiesBlockFactory {
 			$blockState = CompoundTag::create()
 				->setString(BlockStateData::TAG_NAME, $identifier)
 				->setTag(BlockStateData::TAG_STATES, CompoundTag::create());
-			BlockPalette::getInstance()->insertState($blockState);
+			$insertStateToPalette($blockState);
 			$serializer ??= static fn() => new BlockStateWriter($identifier);
 			$deserializer ??= static fn(BlockStateReader $in) => $block;
 		}
@@ -168,30 +171,34 @@ final class CustomiesBlockFactory {
 		$creativeInfo ??= CreativeInventoryInfo::DEFAULT();
 		$components->setTag("minecraft:creative_category", CompoundTag::create()
 			->setString("category", $creativeInfo->getCategory())
-			->setString("group", $creativeInfo->getGroup()));
-		$propertiesTag
-			->setTag("components",
-				$components->setTag("minecraft:creative_category", CompoundTag::create()
-					->setString("category", $creativeInfo->getCategory())
-					->setString("group", $creativeInfo->getGroup())))
-			->setTag("menu_category", CompoundTag::create()
-				->setString("category", $creativeInfo->getCategory() ?? "")
-				->setString("group", $creativeInfo->getGroup() ?? ""))
-			->setInt("molangVersion", 1);
+			->setString("group", $creativeInfo->getGroup()));{
+			$propertiesTag
+				->setTag("components", $components)
+				->setTag("menu_category", CompoundTag::create()
+					->setString("category", $creativeInfo->getCategory() ?? "")
+					->setString("group", $creativeInfo->getGroup() ?? ""))
+				->setInt("molangVersion", 1);
+		}
 
 		if($addToCreative){
-			CreativeInventory::getInstance()->add($block->asItem(), match($creativeInfo->getCategory()){
-				CreativeInventoryInfo::CATEGORY_CONSTRUCTION => CreativeCategory::CONSTRUCTION,
-				CreativeInventoryInfo::CATEGORY_ITEMS => CreativeCategory::ITEMS,
-				CreativeInventoryInfo::CATEGORY_NATURE => CreativeCategory::NATURE,
-				CreativeInventoryInfo::CATEGORY_EQUIPMENT => CreativeCategory::EQUIPMENT,
-				default => throw new AssumptionFailedError("Unknown category")
-			});
+			CreativeItemManager::getInstance()->addBlockItem($block->asItem(), $creativeInfo);
 		}
 
 		$this->blockPaletteEntries[] = new BlockPaletteEntry($identifier, new CacheableNbt($propertiesTag));
 		$this->blockFuncs[$identifier] = [$blockFunc, $serializer, $deserializer];
 
+
+		if($sort){
+			$this->sort();
+		}
+	}
+
+	public function sortAll() : void{
+		BlockPalette::getInstance()->sort();
+		$this->sort();
+	}
+
+	private function sort() : void{
 		// 1.20.60 added a new "block_id" field which depends on the order of the block palette entries. Every time we
 		// insert a new block, we need to re-sort the block palette entries to keep in sync with the client.
 		usort($this->blockPaletteEntries, static function(BlockPaletteEntry $a, BlockPaletteEntry $b): int {

@@ -8,7 +8,6 @@ use pocketmine\block\Block;
 use pocketmine\data\bedrock\item\BlockItemIdMap;
 use pocketmine\data\bedrock\item\SavedItemData;
 use pocketmine\inventory\CreativeCategory;
-use pocketmine\inventory\CreativeInventory;
 use pocketmine\item\Item;
 use pocketmine\item\ItemIdentifier;
 use pocketmine\item\ItemTypeIds;
@@ -55,12 +54,12 @@ final class CustomiesItemFactory {
 	 * item components if present.
 	 * @phpstan-param class-string $className
 	 */
-	public function registerItem(string $className, string $identifier, string $name, ?CreativeCategory $category = null): void {
+	public function registerItem(string $className, string $identifier, string $name, ?int $id = null, ?CreativeCategory $category = null): void {
 		if($className !== Item::class) {
 			Utils::testValidInstance($className, Item::class);
 		}
 
-		$itemId = ItemTypeIds::newId();
+		$itemId = $id ?? ItemTypeIds::newId();
 		$item = new $className(new ItemIdentifier($itemId), $name);
 
 		GlobalItemDataHandlers::getDeserializer()->map($identifier, fn() => clone $item);
@@ -74,12 +73,7 @@ final class CustomiesItemFactory {
 
 		$this->itemTableEntries[$identifier] = $entry = new ItemTypeEntry($identifier, $itemId, $componentBased, $componentBased ? 1 : 0, new CacheableNbt($nbt));
 		$this->registerCustomItemMapping($identifier, $itemId, $entry);
-		if($category !== null){
-			CreativeInventory::getInstance()->add(
-				$item,
-				$category
-			);
-		}
+		CreativeItemManager::getInstance()->addItem($item, $category);
 	}
 
 	/**
@@ -122,5 +116,15 @@ final class CustomiesItemFactory {
 		/** @var string[] $value */
 		$value = $itemToBlockId->getValue($blockItemIdMap);
 		$itemToBlockId->setValue($blockItemIdMap, $value + [$identifier => $identifier]);
+	}
+
+	public static function getUniqueIdFromString(string $string) : int{
+		$id = crc32($string);
+		if($id >= 0x7fff){
+			while($id >= 0x7fff){
+				$id -= 1000;
+			}
+		}
+		return $id;
 	}
 }
