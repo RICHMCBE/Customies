@@ -96,7 +96,7 @@ trait ItemComponentsTrait {
 			$this->addComponent(new FuelComponent($this->getFuelTime()));
 		}
 
-		if($this->getAttackPoints() > 0) {
+		if($this->getAttackPoints() > 1) {
 			$this->addComponent(new DamageComponent($this->getAttackPoints()));
 		}
 
